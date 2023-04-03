@@ -12,10 +12,12 @@ interface user {
     createdAt: Date,
     wins: number,
     draws: number,
-    gamesPlayerd: number,
+    gamesPlayed: number,
     rating: number,
     gameIds: string,
     ratingDeviation: number,
+    title?: string,
+    ratingChange?: number
 }
 
 function genToken() {
@@ -124,3 +126,4 @@ async function register(username: string, password: string) {
 }
 
 export { login, verifyToken, register }
+export type { user }
