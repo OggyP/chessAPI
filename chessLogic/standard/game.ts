@@ -402,6 +402,7 @@ class Game {
             if (move.move.x !== endPos.x || move.move.y !== endPos.y) continue
             const newBoard = new Board(move.board)
             if (promotion) {
+                if (!['p', 'r', 'n', 'b', 'q', 'k'].includes(promotion)) return `Invalid promotion piece ${promotion}`
                 newBoard.promote(endPos, promotion, newBoard.getTurn('prev'))
             }
             const isGameOver = newBoard.isGameOverFor(newBoard.getTurn('next'))

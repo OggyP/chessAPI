@@ -7,9 +7,9 @@ let router = express.Router()
 async function getUserInfo(user: number | string) {
     let result
     if (isNaN(user as number))
-        result = await sqlQuery("SELECT userId, username, createdAt, wins, draws, gamesPlayed, rating, gameIds, ratingDeviation FROM users WHERE username = " + mysql.escape(user))
+        result = await sqlQuery("SELECT userId, username, createdAt, wins, draws, gamesPlayed, rating, gamesPlayedIds, ratingDeviation FROM users WHERE username = " + mysql.escape(user))
     else
-        result = await sqlQuery("SELECT userId, username, createdAt, wins, draws, gamesPlayed, rating, gameIds, ratingDeviation FROM users WHERE userId = " + mysql.escape(user))
+        result = await sqlQuery("SELECT userId, username, createdAt, wins, draws, gamesPlayed, rating, gamesPlayedIds, ratingDeviation FROM users WHERE userId = " + mysql.escape(user))
         
     console.log(result)
 
@@ -46,7 +46,7 @@ router.get('/username/*', async (req, res) => {
 })
 
 router.get('/all', async (req, res) => {
-    const result = await sqlQuery("SELECT userId, username, createdAt, wins, draws, gamesPlayed, rating, gameIds, ratingDeviation FROM users")
+    const result = await sqlQuery("SELECT userId, username, createdAt, wins, draws, gamesPlayed, rating, gamesPlayedIds, ratingDeviation FROM users")
     res.send(result.result)
 })
 

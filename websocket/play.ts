@@ -1,6 +1,8 @@
 import GameStandard from '../chessLogic/standard/game'
 import GameFisherRandom from '../chessLogic/960/game'
 import { ChessBoardType, getChessGame, PieceCodes, Teams, PieceAtPos, convertToChessNotation, Vector } from '../chessLogic/chessLogic'
+import { con, sqlQuery } from '../database'
+import mysql from 'mysql'
 
 import { user } from '../v1/auth'
 import { sendToWs } from './clients'
@@ -138,6 +140,14 @@ class Game {
                 case 'move':
                     this.performMove(team, data)
                     break;
+                case 'game':
+                    if (data.option === 'resign') {
+                        this.game.setGameOver({
+                            by: 'resignation',
+                            winner: oppositeTeam(team)
+                        })
+                        this.onGameOver()
+                    }
             }
         } catch (e) {
             sendToWs(this.players[team].ws, 'error', {
@@ -202,8 +212,80 @@ class Game {
             this.onGameOver()
     }
 
-    onGameOver() {
+    async onGameOver() {
+        if (!this.game.gameOver) throw 'this literally doesn\'t work'
         console.log("GAME OVER", this.game.gameOver)
+
+        if (this.timers.black.timeout) clearTimeout(this.timers.black.timeout)
+        if (this.timers.white.timeout) clearTimeout(this.timers.white.timeout)
+
+        let ratings: any = {}
+        let SQLgameId: number | undefined = undefined
+
+
+        for (let i = 0; i < 2; i++) {
+            const team: teams = ['white', 'black'][i] as teams
+            const playerInfo = this.players[team].info
+            const oppPlayerInfo = this.players[oppositeTeam(team)].info
+
+            ratings[team] = newRating(team, playerInfo.rating, oppPlayerInfo.rating, playerInfo.ratingDeviation, oppPlayerInfo.ratingDeviation, this.game.gameOver.winner)
+        }
+
+        if (this.game.getMoveCount() > 0) {
+            const sql = "INSERT INTO gamesV2 (gameMode, white, black, winner, gameOverReason, gameOverInfo, openingName, openingECO, pgn, timeOption, whiteRating, blackRating, whiteRatingChange, blackRatingChange) VALUES ("
+                + mysql.escape(this.gameInfo.mode) + ", "
+                + mysql.escape(this.players.white.info.username) + ", "
+                + mysql.escape(this.players.black.info.username) + ", "
+                + mysql.escape(this.game.gameOver.winner) + ", "
+                + mysql.escape(this.game.gameOver.by) + ", "
+                + mysql.escape(this.game.gameOver.extraInfo) + ", "
+                + mysql.escape(this.game.opening.Name) + ", "
+                + mysql.escape(this.game.opening.ECO) + ", "
+                + mysql.escape(this.game.getPGN()) + ", "
+                + mysql.escape(this.gameInfo.time.base + '+' + this.gameInfo.time.increment) + ", "
+                + mysql.escape(this.players.white.info.rating) + ", "
+                + mysql.escape(this.players.black.info.rating) + ", "
+                + mysql.escape(ratings.white.rating - this.players.white.info.rating) + ", "
+                + mysql.escape(ratings.black.rating - this.players.black.info.rating) + ")";
+            console.log(sql)
+            const response = await sqlQuery(sql)
+            console.log(response)
+            if (response.error) throw response.error
+            SQLgameId = response.result.insertId
+
+            for (let i = 0; i < 2; i++) {
+                const team: teams = ['white', 'black'][i] as teams
+                const initialPlayerInfo = this.players[team].info
+                let NPI = Object.assign({}, initialPlayerInfo) // New Player Info
+
+                NPI.gamesPlayed++
+
+                if (this.game.gameOver.winner === team)
+                    NPI.wins++
+                else if (this.game.gameOver.winner === 'draw')
+                    NPI.draws++
+
+                NPI.rating = ratings[team].rating
+                NPI.ratingDeviation = ratings[team].deviation
+
+                console.log(initialPlayerInfo.gamesPlayedIds)
+                let gameIdsList = JSON.parse(initialPlayerInfo.gamesPlayedIds)
+                gameIdsList.push(SQLgameId)
+                console.log(gameIdsList)
+
+                const upateUserSQL = "UPDATE users SET "
+                    + "gamesPlayed = " + mysql.escape(NPI.gamesPlayed)
+                    + ", draws = " + mysql.escape(NPI.draws)
+                    + ", wins = " + mysql.escape(NPI.wins)
+                    + ", gamesPlayedIds = " + mysql.escape(JSON.stringify(gameIdsList))
+                    + ", rating = " + mysql.escape(NPI.rating)
+                    + ", ratingDeviation = " + mysql.escape(NPI.ratingDeviation)
+                    + " WHERE userId = " + mysql.escape(NPI.userId)
+                con.query(upateUserSQL, function (err, insert_result) {
+                    if (err) throw err;
+                });
+            }
+        }
 
         for (let i = 0; i < 2; i++) {
             const player = ['white', 'black'][i]
@@ -212,7 +294,9 @@ class Game {
                 sendToWs(ws, 'gameOver', {
                     winner: this.game.gameOver.winner,
                     by: this.game.gameOver.by,
-                    info: this.game.gameOver.extraInfo
+                    info: this.game.gameOver.extraInfo,
+                    newRating: (this.game.getMoveCount() > 0) ? ratings[player] : 0,
+                    gameId: SQLgameId
                 })
         }
 
@@ -222,16 +306,18 @@ class Game {
         playersInGame.delete(this.players.black.info.userId)
     }
 
-    getTimerInfo(team: teams) { // Team is the team whose turn it is to play a turn now
+    getTimerInfo(team: teams, isForRejoin: boolean = false) { // Team is the team whose turn it is to play a turn now
         return {
             "whiteTimer": {
                 "isCountingDown": (team === 'white'),
-                "time": this.timers.white.time,
+                "time": this.timers.white.time -
+                    ((isForRejoin && team === 'white') ? (new Date().getTime() - this.timers.white.startedWaiting) : 0),
                 "timerStartTime": this.timers.white.startedWaiting
             },
             "blackTimer": {
                 "isCountingDown": (team === 'black'),
-                "time": this.timers.black.time,
+                "time": this.timers.black.time -
+                    ((isForRejoin && team === 'black') ? (new Date().getTime() - this.timers.black.startedWaiting) : 0),
                 "timerStartTime": this.timers.black.startedWaiting
             }
         }
@@ -266,7 +352,30 @@ class Game {
         ws.on('message', (data: string) => this.receivedMessage(team, data));
 
         this.sendGameInfo(team)
-        sendToWs(this.players[team].ws, "timerUpdate", this.getTimerInfo(this.game.getLatest().board.getTurn('next')))
+        sendToWs(this.players[team].ws, "timerUpdate", this.getTimerInfo(this.game.getLatest().board.getTurn('next'), true))
+    }
+}
+
+const q = 0.005756462732485115;
+
+function newRating(team: teams, playerRating: number, opponentRating: number, playerRD: number, opponentRD: number, result: teams | 'draw') {
+    let resultAsNum = {
+        white: 1,
+        black: 0,
+        draw: 0.5
+    }[result]
+    if (team === 'black')
+        resultAsNum = 1 - resultAsNum
+
+    let opponentGRD = 1 / Math.sqrt(1 + (3 * q * q * opponentRD * opponentRD) / (Math.PI * Math.PI));
+    let eThingy = 1 / (1 + 10 ** ((opponentGRD * (playerRating - opponentRating)) / -400));
+    let dSquared = 1 / (q * q * opponentGRD * eThingy * (1 - eThingy));
+    playerRating = playerRating + (q / ((1 / playerRD ** 2) + (1 / dSquared))) * opponentGRD * (resultAsNum - eThingy);
+    playerRD = Math.max(Math.sqrt(1 / ((1 / (playerRD * playerRD)) + (1 / dSquared))), 50);
+
+    return {
+        rating: playerRating,
+        deviation: playerRD
     }
 }
 

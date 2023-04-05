@@ -45,7 +45,7 @@ interface Opening {
 }
 
 class Game {
-    static genBoard = () => genBoard(Math.floor(Math.random()*961))
+    static genBoard = () => genBoard(Math.floor(Math.random() * 961))
     private _history: History[] = [];
     public shortNotationMoves: string = ''
     public gameOver: GameOverType = false
@@ -53,7 +53,7 @@ class Game {
     public metaValues: Map<string, string>;
     public metaValuesOrder: string[];
     public opening: Opening = {
-        "Name": "Starting Position",
+        "Name": "Custom Position",
         "ECO": null
     }
     constructor(input: GameConstuctorInput) {
@@ -316,14 +316,6 @@ class Game {
     }
 
     checkForOpening(): void {
-        const moves = this.shortNotationMoves.split(' ')
-        for (let i = 0; i < moves.length; i++) {
-            const opening = (openings as any)[moves.slice(0, i).join(' ')]
-            if (!opening) continue
-            this.metaValues.set('Opening', opening.Name)
-            this.metaValues.set('ECO', opening.ECO)
-            this.opening = opening as Opening
-        }
     }
 
     getPlayerInfo(): {
@@ -402,6 +394,7 @@ class Game {
             if (move.move.x !== endPos.x || move.move.y !== endPos.y) continue
             const newBoard = new Board(move.board)
             if (promotion) {
+                if (!['p', 'r', 'n', 'b', 'q', 'k'].includes(promotion)) return `Invalid promotion piece ${promotion}`
                 newBoard.promote(endPos, promotion, newBoard.getTurn('prev'))
             }
             const isGameOver = newBoard.isGameOverFor(newBoard.getTurn('next'))
@@ -436,14 +429,6 @@ class Game {
             }
             this.shortNotationMoves += ' ' + moveInfo.notation.short
         }
-
-        const opening: { Name: string, ECO: string } = (openings as any)[this.shortNotationMoves]
-        if (this.getMoveCount() < 25 && opening) {
-            this.metaValues.set('Opening', opening.Name)
-            this.metaValues.set('ECO', opening.ECO)
-            this.opening = opening as Opening
-        }
-
     }
 
     getPGN(): string {

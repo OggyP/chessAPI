@@ -1,5 +1,5 @@
 import mysql from 'mysql'
-import * as sqlInfo from '../userInfo.json'
+import * as sqlInfo from './userInfo.json'
 var con = mysql.createConnection({
     host: "localhost",
     user: sqlInfo.username,

@@ -1,12 +1,13 @@
 import express from 'express'
 import v1 from './v1/index'
+import v2 from './v2/index'
 import cors from 'cors'
 import runWS from './webSocket';
 
 var app = express();
 
 
-var whitelist = ['https://chess.oggyp.com', 'https://chesstest.oggyp.com', 'http://localhost:3012', 'http://localhost:3013']
+var whitelist = ['https://chess.oggyp.com', 'https://chesstest.oggyp.com', 'http://localhost:3012', 'http://localhost:3013', 'http://192.168.1.199:3012', 'http://118.211.178.206:3012']
 var corsOptionsDelegate = function (req: any, callback: any) {
     var corsOptions;
     const origin = req.header('Origin')
@@ -27,6 +28,7 @@ app.get('/', function (req, res) {
 });
 
 app.use('/v1', v1)
+app.use('/v2', v2)
 
 app.listen(3005);
 

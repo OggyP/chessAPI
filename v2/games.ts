@@ -6,7 +6,7 @@ import { sqlQuery } from '../database'
 let router = express.Router()
 
 async function getGameInfo(gameId: number) {
-    const result = await sqlQuery("SELECT * FROM games WHERE id = " + mysql.escape(gameId))
+    const result = await sqlQuery("SELECT * FROM gamesV2 WHERE id = " + mysql.escape(gameId))
     if (result.result.length > 0) {
         return result.result[0]
     } else
@@ -20,7 +20,7 @@ router.get('/latest', async (req, res) => {
     }
     const info = await verifyToken(req.headers['user-id'] as string, req.headers.token as string)
     if (info) {
-        const sql = "SELECT id, createdAt, white, black, score, reason, opening, gameMode FROM games WHERE id IN (" + mysql.escape(JSON.parse(info.gameIds)) + ") ORDER BY createdAt DESC LIMIT 100" 
+        const sql = "SELECT id, gameMode, white, black, winner, openingName, gameOverReason, openingECO, timeOption FROM gamesV2 WHERE id IN (" + mysql.escape(JSON.parse(info.gamesPlayedIds)) + ") ORDER BY createdAt DESC LIMIT 100" 
         const result = await sqlQuery(sql)
         res.send(result.result)
     } else
@@ -34,7 +34,7 @@ router.get('/all', async (req, res) => {
     }
     const info = await verifyToken(req.headers['user-id'] as string, req.headers.token as string)
     if (info) {
-        const sql = "SELECT id, createdAt, white, black, score, reason, opening, gameMode FROM games WHERE id IN (" + mysql.escape(JSON.parse(info.gameIds)) + ") ORDER BY createdAt DESC" 
+        const sql = "SELECT * FROM gamesV2 WHERE id IN (" + mysql.escape(JSON.parse(info.gamesPlayedIds)) + ") ORDER BY createdAt DESC" 
         const result = await sqlQuery(sql)
         res.send(result.result)
     } else
@@ -48,7 +48,7 @@ router.get('/everyGameEver', async (req, res) => {
         res.status(400).send("You aren't oooooulinghui.")
     const info = await verifyToken(req.body.userId, req.body.token)
     if (info) {
-        const sql = "SELECT id, createdAt, white, black, score, reason, opening, gameMode FROM games ORDER BY createdAt DESC" 
+        const sql = "SELECT * FROM gamesV2 ORDER BY createdAt DESC" 
         const result = await sqlQuery(sql)
         res.send(result.result)
     } else
