@@ -1,7 +1,7 @@
 import { IncomingMessage, createServer } from 'http';
 import { WebSocketServer } from 'ws';
-import { verifyToken } from './v1/auth';
-import { user } from './v1/auth'
+import { verifyToken } from './v2/auth';
+import { user } from './v2/auth'
 import { joinQueue, gameModes, gameOptions, gameModesType, queues } from './websocket/queue';
 import { allActiveConnections, homeActiveConnections, purgeClientConnection, sendToWs } from './websocket/clients';
 import { checkRejoin } from './websocket/play';

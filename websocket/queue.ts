@@ -1,4 +1,4 @@
-import { user } from "../v1/auth"
+import { user } from "../v2/auth"
 import { homeActiveConnections, sendToWs } from "./clients"
 import { gameModes, gameModesType, gameOptions, createGame } from "./play"
 
@@ -13,20 +13,12 @@ interface queueInfo {
 const queues: Map<string, queueInfo> = new Map()
 
 function broadcastQueues() {
-    console.log('BROADCASE QUEUES')
     const dataToSend = Array.from(queues, ([key, queueInfo]) => ({ gameInfo: queueInfo.gameInfo, player: queueInfo.user.info }));
-
-    console.log(homeActiveConnections)
-
     homeActiveConnections.forEach((ws) => sendToWs(ws, 'queues', dataToSend))
 }
 
 function joinQueue(ws: any, gameInfo: gameOptions) {
-    console.log('JOINING QUEUE')
-
     const clientInfo = ws.clientInfo
-    const clientId = ws.clientId
-
     const queueName = JSON.stringify(gameInfo)
 
     if (queues.has(queueName)) {

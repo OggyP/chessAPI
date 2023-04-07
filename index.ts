@@ -1,5 +1,4 @@
 import express from 'express'
-import v1 from './v1/index'
 import v2 from './v2/index'
 import cors from 'cors'
 import runWS from './webSocket';
@@ -27,7 +26,6 @@ app.get('/', function (req, res) {
     res.send("Welocme to the OggyP Chess API!");
 });
 
-app.use('/v1', v1)
 app.use('/v2', v2)
 
 app.listen(3005);

@@ -1,4 +1,4 @@
-import { user } from '../v1/auth'
+import { user } from '../v2/auth'
 import { broadcastQueues, queues } from './queue'
 import { games, playersInGame } from './play'
 

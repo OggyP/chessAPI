@@ -4,7 +4,6 @@ import mysql from 'mysql'
 import { randomUUID } from 'crypto'
 
 const passwordSaltRounds = 10;
-const tokenSaltRounds = 8;
 
 interface user {
     userId: number,
@@ -14,46 +13,47 @@ interface user {
     draws: number,
     gamesPlayed: number,
     rating: number,
-    gameIds: string,
+    lastGameTime: Date,
     gamesPlayedIds: string,
     ratingDeviation: number,
     title?: string,
     ratingChange?: number
 }
 
-function genToken() {
-    return new Promise<{ token: string, hash: string }>(function (resolve) {
-        let token = randomUUID()
-        console.log(token)
-        bcrypt.hash(token, tokenSaltRounds, (err, hash) => {
-            resolve({
-                token: token,
-                hash: hash
-            })
-        });
-    })
+function checkTokenHasNotExpired(tokenToCheck: string) {
+    const [token, createdAt] = tokenToCheck.split('|')
+    const dateCreated = new Date(Number(createdAt))
+    let expiresDate = new Date()
+    expiresDate.setDate(dateCreated.getDate() + 30)
+    if (new Date() < expiresDate) {
+        return true
+    }
+    return false
 }
 
-async function verifyToken(userId: string, token: string) {
-    return new Promise<user | false>((resolve) => {
-        con.query("SELECT * FROM users WHERE userId = " + mysql.escape(userId) + " AND tokenTime >= curdate() - INTERVAL DAYOFWEEK(curdate())+7 DAY", function (err, result, fields) {
-            if (err) throw err;
-            if (result.length === 1) {
-                bcrypt.compare(token, result[0].token, function (error, response) {
-                    if (response) {
-                        result[0].passwordHash = undefined
-                        result[0].token = undefined
-                        result[0].tokenTime = undefined
-                        resolve(result[0] as user)
-                    } else {
-                        resolve(false)
-                    }
-                });
-            } else {
-                resolve(false)
+async function verifyToken(userId: string, tokenToCheck: string) {
+    const selectUser = await sqlQuery("SELECT * FROM users WHERE userId = " + mysql.escape(userId))
+    if (selectUser.error) throw selectUser.error
+    const result = selectUser.result
+    if (result.length === 1) {
+        const tokens = JSON.parse(result[0].tokens)
+        const remainingTokens = tokens.filter(checkTokenHasNotExpired)
+        if (remainingTokens.length !== tokens.length) {
+            const sql = "UPDATE users SET tokens = " + mysql.escape(JSON.stringify(remainingTokens)) + " WHERE UserId = " + mysql.escape(userId);
+            sqlQuery(sql)
+        }
+        for (let i = 0; i < remainingTokens.length; i++) {
+            const [token, createdAt] = remainingTokens[i].split('|')
+            if (token === tokenToCheck) {
+                result[0].passwordHash = undefined
+                result[0].tokens = undefined
+                return (result[0] as user)
             }
-        })
-    })
+        }
+        return false
+    } else {
+        return false
+    }
 }
 
 async function login(user: string, pwd: string) {
@@ -65,17 +65,17 @@ async function login(user: string, pwd: string) {
         if (response) {
             console.log(result[0].username + " logged in.")
             const userId = result[0].userId
-            const tokenInfo = await genToken()
-            const sql = "UPDATE users SET token = " + mysql.escape(tokenInfo.hash) + ", tokenTime = sysdate() WHERE UserId = " + mysql.escape(userId);
-            console.log(sql)
+            const token = randomUUID()
+            let tokenList = JSON.parse(result[0].tokens)
+            tokenList.push(token + '|' + (new Date()).getTime())
+            const sql = "UPDATE users SET tokens = " + mysql.escape(JSON.stringify(tokenList)) + " WHERE UserId = " + mysql.escape(userId);
             sqlQuery(sql)
             result[0].passwordHash = undefined
-            result[0].token = undefined
-            result[0].tokenTime = undefined
+            result[0].tokens = undefined
             return {
                 valid: true,
                 user: result[0] as user,
-                token: tokenInfo.token
+                token: token
             }
         } else
             return {
@@ -99,7 +99,7 @@ async function register(username: string, password: string) {
             };
         }
 
-        const info  = await sqlQuery("SELECT * FROM users WHERE username = " + mysql.escape(username));
+        const info = await sqlQuery("SELECT * FROM users WHERE username = " + mysql.escape(username));
         if (info.error) throw info;
         const rows = info.result
         if (rows.length > 0) {

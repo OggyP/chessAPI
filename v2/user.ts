@@ -10,8 +10,6 @@ async function getUserInfo(user: number | string) {
         result = await sqlQuery("SELECT userId, username, createdAt, wins, draws, gamesPlayed, rating, gamesPlayedIds, ratingDeviation FROM users WHERE username = " + mysql.escape(user))
     else
         result = await sqlQuery("SELECT userId, username, createdAt, wins, draws, gamesPlayed, rating, gamesPlayedIds, ratingDeviation FROM users WHERE userId = " + mysql.escape(user))
-        
-    console.log(result)
 
     if (result.result.length > 0)
         return result.result[0]

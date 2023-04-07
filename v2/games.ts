@@ -56,7 +56,6 @@ router.get('/everyGameEver', async (req, res) => {
 })
 
 router.get('/view/*', async (req, res) => {
-    console.log(req)
     const gameId = Number(req.url.slice(6))
     if (isNaN(gameId)) {
         res.status(400).send("Invalid game ID")

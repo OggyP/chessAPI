@@ -4,7 +4,7 @@ import { ChessBoardType, getChessGame, PieceCodes, Teams, PieceAtPos, convertToC
 import { con, sqlQuery } from '../database'
 import mysql from 'mysql'
 
-import { user } from '../v1/auth'
+import { user } from '../v2/auth'
 import { sendToWs } from './clients'
 import { randomUUID } from 'crypto'
 
@@ -117,8 +117,6 @@ class Game {
                 meta: metaValues
             }
         })
-
-        console.log(this.game.metaValues)
 
         this.sendGameInfo('white')
         this.sendGameInfo('black')
@@ -249,7 +247,6 @@ class Game {
                 + mysql.escape(ratings.black.rating - this.players.black.info.rating) + ")";
             console.log(sql)
             const response = await sqlQuery(sql)
-            console.log(response)
             if (response.error) throw response.error
             SQLgameId = response.result.insertId
 
@@ -268,10 +265,8 @@ class Game {
                 NPI.rating = ratings[team].rating
                 NPI.ratingDeviation = ratings[team].deviation
 
-                console.log(initialPlayerInfo.gamesPlayedIds)
                 let gameIdsList = JSON.parse(initialPlayerInfo.gamesPlayedIds)
                 gameIdsList.push(SQLgameId)
-                console.log(gameIdsList)
 
                 const upateUserSQL = "UPDATE users SET "
                     + "gamesPlayed = " + mysql.escape(NPI.gamesPlayed)
