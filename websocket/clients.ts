@@ -39,10 +39,10 @@ function purgeClientConnection(userId: number) {
     }
 
     if (spectatorsInGame.has(userId)) {
-        const gameId = playersInGame.get(userId)
-        if (!gameId) return
+        const gameId = spectatorsInGame.get(userId)
+        if (!gameId) throw new Error('gameId is none')
         const game = games.get(gameId)
-        if (!game) return
+        if (!game) throw new Error('game is none')
         game.removeSpectator(userId)
     }
 

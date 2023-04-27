@@ -66,15 +66,15 @@ const spectatorsInGame = new Map<number, string>()
 
 function broadcastSpectateGames() {
     const dataToSend = Array.from(games, ([gameId, game]) => (
-        { 
+        {
             gameId: gameId,
-            gameInfo: game.gameInfo, 
+            gameInfo: game.gameInfo,
             players: {
                 white: game.players.white.info,
                 black: game.players.black.info
-            } 
+            }
         }
-        ));
+    ));
     homeActiveConnections.forEach((ws) => sendToWs(ws, 'spectateGames', dataToSend))
 }
 
@@ -312,7 +312,7 @@ class Game {
         for (let i = 0; i < 2; i++) {
             const player = ['white', 'black'][i]
             const ws = this.players[player as teams].ws
-            if (ws && this.game.gameOver)
+            if (ws)
                 sendToWs(ws, 'gameOver', {
                     winner: this.game.gameOver.winner,
                     by: this.game.gameOver.by,
@@ -325,13 +325,15 @@ class Game {
         for (let i = 0; i < this.spectators.length; i++) {
             const ws = this.spectators[i].ws
             if (ws)
-            sendToWs(ws, 'gameOver', {
-                winner: this.game.gameOver.winner,
-                by: this.game.gameOver.by,
-                info: this.game.gameOver.extraInfo,
-                newRating: 0,
-                gameId: SQLgameId
-            })
+                sendToWs(ws, 'gameOver', {
+                    winner: this.game.gameOver.winner,
+                    by: this.game.gameOver.by,
+                    info: this.game.gameOver.extraInfo,
+                    newRating: 0,
+                    gameId: SQLgameId
+                })
+
+            spectatorsInGame.delete(this.spectators[i].user.userId)
         }
 
         games.delete(this.id)
@@ -391,6 +393,24 @@ class Game {
         sendToWs(this.players[team].ws, "timerUpdate", this.getTimerInfo(this.game.getLatest().board.getTurn('next'), true))
     }
 
+    sendSpectatorList() {
+        const data = Array.from(this.spectators, (spectator => spectator.user))
+        console.log("sending spec", data)
+
+        for (let i = 0; i < 2; i++) {
+            const player = ['white', 'black'][i]
+            const ws = this.players[player as teams].ws
+            if (ws)
+                sendToWs(ws, 'spectators', data)
+        }
+
+        for (let i = 0; i < this.spectators.length; i++) {
+            const ws = this.spectators[i].ws
+            if (ws)
+                sendToWs(ws, 'spectators', data)
+        }
+    }
+
     addSpectator(player: user, ws: any) {
         spectatorsInGame.set(player.userId, this.id)
         this.spectators.push({
@@ -407,10 +427,13 @@ class Game {
             black: this.players.black.info
         })
         sendToWs(ws, "timerUpdate", this.getTimerInfo(this.game.getLatest().board.getTurn('next'), true))
+
+        this.sendSpectatorList()
     }
 
     removeSpectator(userId: number) {
         this.spectators = this.spectators.filter(spectator => spectator.user.userId !== userId)
+        this.sendSpectatorList()
     }
 }
 
