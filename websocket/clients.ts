@@ -1,6 +1,6 @@
 import { user } from '../v2/auth'
 import { broadcastQueues, queues } from './queue'
-import { games, playersInGame } from './play'
+import { games, playersInGame, spectatorsInGame } from './play'
 
 interface wsMsg {
     type: string,
@@ -22,9 +22,6 @@ const allActiveConnections: Map<number, any> = new Map()
 const homeActiveConnections: Map<number, any> = new Map()
 
 function purgeClientConnection(userId: number) {
-    [allActiveConnections, homeActiveConnections].forEach(connectionList => {
-        connectionList.delete(userId)
-    })
     let updatedQueue = false
     queues.forEach((value, key) => {
         if (value.user.info.userId === userId) {
@@ -39,8 +36,19 @@ function purgeClientConnection(userId: number) {
         const gameId = playersInGame.get(userId)
         if (!gameId) return
         const game = games.get(gameId)
-
     }
+
+    if (spectatorsInGame.has(userId)) {
+        const gameId = playersInGame.get(userId)
+        if (!gameId) return
+        const game = games.get(gameId)
+        if (!game) return
+        game.removeSpectator(userId)
+    }
+
+    [allActiveConnections, homeActiveConnections, spectatorsInGame].forEach(connectionList => {
+        connectionList.delete(userId)
+    })
 }
 
 export { sendToWs, purgeClientConnection, allActiveConnections, homeActiveConnections }

@@ -5,8 +5,10 @@ import { user } from './v2/auth'
 import { joinQueue, gameModes, gameOptions, gameModesType, queues } from './websocket/queue';
 import { allActiveConnections, homeActiveConnections, purgeClientConnection, sendToWs } from './websocket/clients';
 import { checkRejoin } from './websocket/play';
+import { games } from './websocket/play';
 
-const regex = /\/play\/(?<mode>\w+)\/(?<base>\d+)\+(?<increment>\d+)\//
+const playRegex = /\/play\/(?<mode>\w+)\/(?<base>\d+)\+(?<increment>\d+)\//
+const spectateRegex = /\/spectate\/(?<game>[0-9a-fA-F]{8}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{12})/
 
 function authenticate(request: IncomingMessage, next: (arg0: string | undefined, arg1?: user, arg2?: string, arg3?: any) => void) {
     try {
@@ -47,7 +49,7 @@ function authenticate(request: IncomingMessage, next: (arg0: string | undefined,
                 next(undefined, user, '/home', null)
                 return
             } else if (request.url?.startsWith('/play')) {
-                const match = request.url?.match(regex);
+                const match = request.url?.match(playRegex);
 
                 if (!(match && match.groups)) {
                     next("URL invalid")
@@ -68,6 +70,21 @@ function authenticate(request: IncomingMessage, next: (arg0: string | undefined,
                 }
 
                 next(undefined, user, '/play', gameInfo)
+                return
+            } else if (request.url?.startsWith('/spectate')) {
+                const match = request.url?.match(spectateRegex);
+
+                if (!(match && match.groups)) {
+                    next("URL invalid")
+                    return
+                }
+
+                if (!games.has(match.groups.game)) {
+                    next("Invalid game id")
+                    return
+                }
+
+                next(undefined, user, '/spectate', match.groups.game)
                 return
             }
             next('Invalid url path')
@@ -113,8 +130,32 @@ function runWS() {
 
                 case '/home':
                     homeActiveConnections.set(client.userId, ws)
-                    sendToWs(ws, 'queues', Array.from(queues, ([key, queueInfo]) => ({ gameInfo: queueInfo.gameInfo, player: queueInfo.user.info })))
+                    sendToWs(ws, 'queues', Array.from(queues, ([key, queueInfo]) => (
+                        {
+                            gameInfo: queueInfo.gameInfo,
+                            player: queueInfo.user.info
+                        })))
+                    sendToWs(ws, 'spectateGames', Array.from(games, ([gameId, game]) => (
+                        { 
+                            gameId: gameId,
+                            gameInfo: game.gameInfo, 
+                            players: {
+                                white: game.players.white.info,
+                                black: game.players.black.info
+                            } 
+                        }
+                        )))
                     break
+                case '/spectate':
+                    if (!games.has(data)) {
+                        sendToWs(ws, 'error', {
+                            title: 'Game Does Not Exist!',
+                            description: 'The game you are trying to spectate does not exist'
+                        })
+                    }
+                    const game = games.get(data)
+                    if (!game) throw new Error("Game is undef on spectate")
+                    game.addSpectator(client, ws)
             }
         }
 

@@ -1,11 +1,11 @@
 import GameStandard from '../chessLogic/standard/game'
 import GameFisherRandom from '../chessLogic/960/game'
-import { ChessBoardType, getChessGame, PieceCodes, Teams, PieceAtPos, convertToChessNotation, Vector } from '../chessLogic/chessLogic'
+import { getChessGame, PieceCodes } from '../chessLogic/chessLogic'
 import { con, sqlQuery } from '../database'
+import { homeActiveConnections, sendToWs } from "./clients"
 import mysql from 'mysql'
-
 import { user } from '../v2/auth'
-import { sendToWs } from './clients'
+
 import { randomUUID } from 'crypto'
 
 const gameModes = ['standard', '960']
@@ -62,6 +62,21 @@ interface moveDataSend extends moveDataReceive {
 
 const games = new Map<string, Game>()
 const playersInGame = new Map<number, string>()
+const spectatorsInGame = new Map<number, string>()
+
+function broadcastSpectateGames() {
+    const dataToSend = Array.from(games, ([gameId, game]) => (
+        { 
+            gameId: gameId,
+            gameInfo: game.gameInfo, 
+            players: {
+                white: game.players.white.info,
+                black: game.players.black.info
+            } 
+        }
+        ));
+    homeActiveConnections.forEach((ws) => sendToWs(ws, 'spectateGames', dataToSend))
+}
 
 type gameTypes = typeof GameStandard | typeof GameFisherRandom
 
@@ -73,12 +88,18 @@ class Game {
     gameInfo: gameOptions
     timers: timers
     id: string
+    spectators: {
+        user: user
+        ws: any
+    }[]
 
     constructor(gameId: string, gameInfo: gameOptions, players: players) {
         this.id = gameId
         this.players = players
         this.gameInfo = gameInfo
         this.gameType = getChessGame(gameInfo.mode)
+
+        this.spectators = []
 
         this.timers = {
             white: { "time": gameInfo.time.base * 1000, "timeout": null, "startedWaiting": new Date().getTime() },
@@ -206,6 +227,12 @@ class Game {
                 sendToWs(ws, 'move', dataToSend)
         }
 
+        for (let i = 0; i < this.spectators.length; i++) {
+            const ws = this.spectators[i].ws
+            if (ws)
+                sendToWs(ws, 'move', dataToSend)
+        }
+
         if (this.game.gameOver)
             this.onGameOver()
     }
@@ -295,10 +322,24 @@ class Game {
                 })
         }
 
+        for (let i = 0; i < this.spectators.length; i++) {
+            const ws = this.spectators[i].ws
+            if (ws)
+            sendToWs(ws, 'gameOver', {
+                winner: this.game.gameOver.winner,
+                by: this.game.gameOver.by,
+                info: this.game.gameOver.extraInfo,
+                newRating: 0,
+                gameId: SQLgameId
+            })
+        }
+
         games.delete(this.id)
 
         playersInGame.delete(this.players.white.info.userId)
         playersInGame.delete(this.players.black.info.userId)
+
+        broadcastSpectateGames()
     }
 
     getTimerInfo(team: teams, isForRejoin: boolean = false) { // Team is the team whose turn it is to play a turn now
@@ -348,6 +389,28 @@ class Game {
 
         this.sendGameInfo(team)
         sendToWs(this.players[team].ws, "timerUpdate", this.getTimerInfo(this.game.getLatest().board.getTurn('next'), true))
+    }
+
+    addSpectator(player: user, ws: any) {
+        spectatorsInGame.set(player.userId, this.id)
+        this.spectators.push({
+            user: player,
+            ws: ws
+        })
+
+        sendToWs(ws, 'game', {
+            mode: this.gameInfo.mode,
+            time: this.gameInfo.time,
+            team: 'none',
+            pgn: this.game.getPGN(),
+            white: this.players.white.info,
+            black: this.players.black.info
+        })
+        sendToWs(ws, "timerUpdate", this.getTimerInfo(this.game.getLatest().board.getTurn('next'), true))
+    }
+
+    removeSpectator(userId: number) {
+        this.spectators = this.spectators.filter(spectator => spectator.user.userId !== userId)
     }
 }
 
@@ -412,7 +475,9 @@ function createGame(gameInfo: gameOptions, players: players) {
 
     playersInGame.set(players.white.info.userId, gameId)
     playersInGame.set(players.black.info.userId, gameId)
+
+    broadcastSpectateGames()
 }
 
-export { gameModes, createGame, games, playersInGame, checkRejoin }
+export { gameModes, createGame, games, playersInGame, checkRejoin, broadcastSpectateGames, spectatorsInGame }
 export type { gameModesType, gameOptions }
