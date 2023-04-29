@@ -1,6 +1,4 @@
-import GameStandard from '../chessLogic/standard/game'
-import GameFisherRandom from '../chessLogic/960/game'
-import { getChessGame, PieceCodes } from '../chessLogic/chessLogic'
+import { getChessGame, PieceCodes, gameTypes, gameTypeTypes } from '../chessLogic/chessLogic'
 import { con, sqlQuery } from '../database'
 import { homeActiveConnections, sendToWs } from "./clients"
 import mysql from 'mysql'
@@ -8,8 +6,8 @@ import { user } from '../v2/auth'
 
 import { randomUUID } from 'crypto'
 
-const gameModes = ['standard', '960']
-type gameModesType = 'standard' | '960'
+const gameModes = ['standard', '960', 'fourkings']
+type gameModesType = 'standard' | '960' | 'fourkings'
 type teams = 'white' | 'black'
 
 interface player {
@@ -78,13 +76,11 @@ function broadcastSpectateGames() {
     homeActiveConnections.forEach((ws) => sendToWs(ws, 'spectateGames', dataToSend))
 }
 
-type gameTypes = typeof GameStandard | typeof GameFisherRandom
-
 class Game {
 
     players: players
-    gameType: gameTypes
-    game: GameStandard | GameFisherRandom
+    gameType: gameTypeTypes
+    game: gameTypes
     gameInfo: gameOptions
     timers: timers
     id: string
@@ -110,7 +106,8 @@ class Game {
 
         const fullChessModeNames = {
             'standard': 'Standard',
-            '960': '960'
+            '960': '960',
+            'fourkings': 'Four Kings'
         }
 
         const startingFEN: string = this.gameType.genBoard()
