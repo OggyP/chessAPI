@@ -1,6 +1,6 @@
 import DefaultBoard from '../default/board';
 import Board from './board'
-import { convertToPosition, convertToChessNotation, addVectorsAndCheckPos } from './functions';
+import { convertToPosition, convertToChessNotation } from './functions';
 import { Pawn } from './pieces';
 import { Vector, Teams, PieceCodes } from './types'
 import genBoard from './startingPosition'
@@ -175,7 +175,6 @@ class Game {
                         break;
                     }
                 } else if (move[0] === move[0].toLowerCase()) {
-                    console.log('Pawn Move ' + originalPGNmove + '|' + move)
                     // pawn move
                     let startingPos: Vector = { 'x': convertToPosition(move[0], 'x') as number, 'y': -1 }
                     let endingPos: Vector
@@ -428,6 +427,30 @@ class Game {
                 this.shortNotationMoves += ((i !== 1) ? ' ' : '') + ((i - 1) / 2 + 1) + '.'
             }
             this.shortNotationMoves += ' ' + moveInfo.notation.short
+        }
+    }
+
+    resetToMove(moveNum: number) {
+        const newHistory = this._history.slice(0, moveNum + 1)
+        this._history = newHistory
+
+        this.shortNotationMoves = ''
+        for (let i = 0; i < this._history.length; i++) {
+            const move = this._history[i]
+            const moveInfo = move.move
+            if (moveInfo) {
+                if (i % 2 === 1) {
+                    this.shortNotationMoves += ((i !== 1) ? ' ' : '') + ((i - 1) / 2 + 1) + '.'
+                }
+                this.shortNotationMoves += ' ' + moveInfo.notation.short
+            }
+        }
+
+        const opening: { Name: string, ECO: string } = (openings as any)[this.shortNotationMoves]
+        if (this.getMoveCount() < 25 && opening) {
+            this.metaValues.set('Opening', opening.Name)
+            this.metaValues.set('ECO', opening.ECO)
+            this.opening = opening as Opening
         }
     }
 

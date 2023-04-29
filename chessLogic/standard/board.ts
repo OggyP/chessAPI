@@ -52,7 +52,7 @@ class Board extends DefaultBoard {
             this.capturedPieces.white = Object.assign([], board.capturedPieces.white)
             this.capturedPieces.black = Object.assign([], board.capturedPieces.black)
             this._pieceId = board._pieceId
-            this._repitions = board._repitions
+            this._repitions = new Map(board._repitions)
         } else {
             let FENparts = input.split(' ')
             if (FENparts.length !== 6) {
@@ -327,7 +327,8 @@ class Board extends DefaultBoard {
         return false;
     }
 
-    getPos(position: BoardPos): PieceAtPos {
+    getPos(position: BoardPos | null): PieceAtPos {
+        if (!position) return null
         if (position.x < 0 || position.x >= 8 || position.y < 0 || position.y >= 8) return null
         return this._squares[position.y][position.x]
     }
@@ -336,11 +337,11 @@ class Board extends DefaultBoard {
         this._squares[position.y][position.x] = piece
     }
     
-    getShortNotation(startPos: BoardPos, endPos: BoardPos, moveType: string[], startBoard: Board, append: string, promotionChoice?: PieceCodes): string {
+    getShortNotation(startPos: BoardPos, endPos: BoardPos, moveType: string[], startBoard: DefaultBoard, append: string, promotionChoice?: PieceCodes): string {
         return Board.getShortNotationStatic(startPos, endPos, moveType, startBoard, append, promotionChoice)
     }
 
-    static getShortNotationStatic(startPos: BoardPos, endPos: BoardPos, moveType: string[], startBoard: Board, append: string, promotionChoice?: PieceCodes): string {
+    static getShortNotationStatic(startPos: BoardPos, endPos: BoardPos, moveType: string[], startBoard: DefaultBoard, append: string, promotionChoice?: PieceCodes): string {
         const startingPiece = startBoard.getPos(startPos)
         let text = ''
         if (startingPiece) {
