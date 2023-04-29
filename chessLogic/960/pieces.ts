@@ -283,7 +283,7 @@ class King extends ChessPiece {
             moves[i].board.castleInfo[this.team].queenSide = false
         }
 
-        if (!board.inCheck(this.team) && (pos.y === 0 || pos.y === 7)) {
+        if (!board.inCheck(this.team).length && (pos.y === 0 || pos.y === 7)) {
             if (board.castleInfo[this.team].kingSide) {
 
                 // Find the rook's position
@@ -355,9 +355,9 @@ class King extends ChessPiece {
                                     x: kingCheckPos.x - normalisedDirForKing,
                                     y: pos.y
                                 }, kingCheckPos)
-                                inCheck = newBoard.inCheck(this.team)
+                                inCheck = !!(newBoard.inCheck(this.team).length)
                                 if (inCheck) break
-                                kingCheckPos.x++
+                                kingCheckPos.x += normalisedDirForKing
                             }
                             if (!inCheck) {
                                 newBoard.setPos({ "x": 5, "y": pos.y }, rook)
@@ -393,7 +393,7 @@ class King extends ChessPiece {
                             break;
                         }
                     }
-                    checkPos.x--
+                    checkPos.x++
                 }
 
                 if (rookPos) {
@@ -443,9 +443,9 @@ class King extends ChessPiece {
                                     x: kingCheckPos.x - normalisedDirForKing,
                                     y: pos.y
                                 }, kingCheckPos)
-                                inCheck = newBoard.inCheck(this.team)
+                                inCheck = !!(newBoard.inCheck(this.team).length)
                                 if (inCheck) break
-                                kingCheckPos.x++
+                                kingCheckPos.x += normalisedDirForKing
                             }
                             if (!inCheck) {
                                 newBoard.setPos({ "x": 3, "y": pos.y }, rook)

@@ -16,8 +16,11 @@ function getChessGame(mode: GameModes) {
     return GameStandard
 }
 
+type pieceStyle = 'normal' | 'medieval' | 'ewan' | 'sus'
+
 type gameTypeTypes = typeof GameStandard | typeof GameFisherRandom | typeof GameFourKings
 type gameTypes = GameStandard | GameFisherRandom | GameFourKings
 
+
 export { Board as ChessBoardType, getChessGame, ChessPiece, King, Queen, Rook, Bishop, Knight, Pawn, convertToChessNotation }
-export type { Teams, Vector, PieceCodes, PieceAtPos, gameTypeTypes, gameTypes }
+export type { Teams, Vector, PieceCodes, PieceAtPos, pieceStyle, gameTypeTypes, gameTypes }
