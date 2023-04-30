@@ -144,7 +144,7 @@ class Game {
                     endingPos.x = (move === 'O-O' || move === '0-0') ? 6 : 2
                     let piece = board.getPos(kingPos)
                     if (!piece) {
-                        console.log('No legal castle found. ', board.getFen())
+                        console.warn('No legal castle found. ', board.getFen())
                         break;
                     }
                     const moves = piece.getMoves(kingPos, board)
@@ -171,7 +171,7 @@ class Game {
                         }
                     }
                     if (!moveFound) {
-                        console.log('No legal castle found. ', board.getFen())
+                        console.warn('No legal castle found. ', board.getFen())
                         break;
                     }
                 } else if (move[0] === move[0].toLowerCase()) {
@@ -212,7 +212,7 @@ class Game {
                         }
                     }
                     if (!moveInfo) {
-                        console.log("No legal pawn move was found. ", board.getFen())
+                        console.warn("No legal pawn move was found. ", board.getFen())
                         break;
                     }
                     if (move[2] === '=') {
@@ -276,7 +276,7 @@ class Game {
                                 }
                             }
                     if (!foundMove) {
-                        console.log("No legal normal move found at " + originalPGNmove + " | " + board.getFen() + " Current turn: " + turn + '')
+                        console.warn("No legal normal move found at " + originalPGNmove + " | " + board.getFen() + " Current turn: " + turn + '')
                         break;
                     }
                 }

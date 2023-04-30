@@ -111,6 +111,7 @@ class Game {
         }
 
         const startingFEN: string = this.gameType.genBoard()
+        console.log(startingFEN)
 
         const metaValues = new Map([
             ['Event', 'Live Chess'],
