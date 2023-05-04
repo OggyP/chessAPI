@@ -257,8 +257,8 @@ class Game {
         if (this.game.getMoveCount() > 0) {
             const sql = "INSERT INTO gamesV2 (gameMode, white, black, winner, gameOverReason, gameOverInfo, openingName, openingECO, pgn, timeOption, whiteRating, blackRating, whiteRatingChange, blackRatingChange) VALUES ("
                 + mysql.escape(this.gameInfo.mode) + ", "
-                + mysql.escape(this.players.white.info.username) + ", "
-                + mysql.escape(this.players.black.info.username) + ", "
+                + mysql.escape(((this.players.white.info.title) ? `${this.players.white.info.title}|` : '') + this.players.white.info.username) + ", "
+                + mysql.escape(((this.players.black.info.title) ? `${this.players.black.info.title}|` : '') + this.players.black.info.username) + ", "
                 + mysql.escape(this.game.gameOver.winner) + ", "
                 + mysql.escape(this.game.gameOver.by) + ", "
                 + mysql.escape(this.game.gameOver.extraInfo) + ", "
