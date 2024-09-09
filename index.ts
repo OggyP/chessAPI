@@ -10,6 +10,7 @@ var whitelist = ['https://chess.oggyp.com', 'http://localhost:3000', 'https://lo
 var corsOptionsDelegate = function (req: any, callback: any) {
     var corsOptions;
     const origin = req.header('Origin')
+    console.log(origin)
     if (whitelist.indexOf(origin) !== -1 || !origin) {
         corsOptions = { origin: true } // reflect (enable) the requested origin in the CORS response
     } else {
