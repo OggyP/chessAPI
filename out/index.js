@@ -8,7 +8,7 @@ const index_1 = __importDefault(require("./v2/index"));
 const cors_1 = __importDefault(require("cors"));
 const webSocket_1 = __importDefault(require("./webSocket"));
 var app = (0, express_1.default)();
-var whitelist = ['https://chess.oggyp.com', 'https://chesstest.oggyp.com', 'http://localhost:3012', 'http://localhost:3013', 'http://192.168.1.199:3012', 'http://118.211.178.206:3012'];
+var whitelist = ['https://chess.oggyp.com', 'http://localhost:3000', 'https://localhost:3000', 'http://192.168.1.199:3000'];
 var corsOptionsDelegate = function (req, callback) {
     var corsOptions;
     const origin = req.header('Origin');
