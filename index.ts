@@ -6,7 +6,7 @@ import runWS from './webSocket';
 var app = express();
 
 
-var whitelist = ['https://chess.oggyp.com', 'http://localhost:3000', 'http://192.168.1.199:3000']
+var whitelist = ['https://chess.oggyp.com', 'http://localhost:3000', 'https://localhost:3000', 'http://192.168.1.199:3000']
 var corsOptionsDelegate = function (req: any, callback: any) {
     var corsOptions;
     const origin = req.header('Origin')
