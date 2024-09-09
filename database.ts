@@ -1,11 +1,12 @@
 import mysql from 'mysql'
-import * as sqlInfo from './userInfo.json'
+
 var con = mysql.createConnection({
-    host: "localhost",
-    user: sqlInfo.username,
-    password: sqlInfo.password,
-    database: "chess"
+    host: process.env.DB_HOST,
+    user: process.env.DB_USERNAME,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_DATABASE
 });
+
 
 con.connect(function (err) {
     if (err) throw err;

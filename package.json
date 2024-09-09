@@ -31,5 +31,9 @@
         "@types/node": "^17.0.26",
         "@types/uuid": "^8.3.4",
         "@types/ws": "^8.5.4"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://git.oggyp.com/OggyP/chess-api.git"
     }
 }

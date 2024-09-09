@@ -136,15 +136,15 @@ function runWS() {
                             player: queueInfo.user.info
                         })))
                     sendToWs(ws, 'spectateGames', Array.from(games, ([gameId, game]) => (
-                        { 
+                        {
                             gameId: gameId,
-                            gameInfo: game.gameInfo, 
+                            gameInfo: game.gameInfo,
                             players: {
                                 white: game.players.white.info,
                                 black: game.players.black.info
-                            } 
+                            }
                         }
-                        )))
+                    )))
                     break
                 case '/spectate':
                     if (!games.has(data)) {

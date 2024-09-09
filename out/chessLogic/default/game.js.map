@@ -1,0 +1,1 @@
+{"version":3,"file":"game.js","sourceRoot":"","sources":["../../../chessLogic/default/game.ts"],"names":[],"mappings":";;AAAA,MAAM,WAAW;IACb,SAAS,CAAQ;IACjB,IAAI,CAAQ;IACZ,YAAY,aAAqB,EAAE,QAAgB;QAC/C,IAAI,CAAC,SAAS,GAAG,aAAa,CAAA;QAC9B,IAAI,CAAC,IAAI,GAAG,QAAQ,CAAA;IACxB,CAAC;CACJ;AAED,kBAAe,WAAW,CAAA"}
