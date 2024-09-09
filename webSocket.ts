@@ -19,6 +19,7 @@ function authenticate(request: IncomingMessage, next: (arg0: string | undefined,
 
         // Perform authentication logic here and set client identifier
         const parsedUrl = new URL(request.url, 'http://localhost');
+        console.log(parsedUrl)
 
         const token = parsedUrl.searchParams.get('token');
         const userId = parsedUrl.searchParams.get('userId');
@@ -186,6 +187,8 @@ function runWS() {
 
     server.on('upgrade', function upgrade(request, socket, head) {
         socket.on('error', onSocketError);
+
+        console.log("Auth Attempt")
 
         authenticate(request, function next(err: any, client?: user, location?: string, data?: any) {
             if (err || !client) {
