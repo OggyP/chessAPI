@@ -17,8 +17,8 @@ async function getUserInfo(user: number | string) {
         return false
 }
 
-router.get('/id/*', async (req, res) => {
-    const userId = Number(req.url.slice(4))
+router.get('/id/:userId', async (req, res) => {
+    const userId = Number(req.params.userId)
     if (isNaN(userId)) {
         res.status(400).send("Invalid Specified User ID")
         return
@@ -30,13 +30,13 @@ router.get('/id/*', async (req, res) => {
         res.status(400).send("Invalid Specified User ID.")
 })
 
-router.get('/username/*', async (req, res) => {
-    const userId = req.url.slice(10)
-    if (!userId) {
+router.get('/username/:username', async (req, res) => {
+    const username = req.params.username
+    if (!username) {
         res.status(400).send("Invalid Specified Username")
         return
     }
-    const info = await getUserInfo(userId)
+    const info = await getUserInfo(username)
     if (info)
         res.send(info)
     else

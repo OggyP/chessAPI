@@ -65,8 +65,8 @@ router.get('/everyGameEver', async (req, res) => {
     else
         res.status(401).send("Invalid User ID / token.");
 });
-router.get('/view/*', async (req, res) => {
-    const gameId = Number(req.url.slice(6));
+router.get('/view/:gameId', async (req, res) => {
+    const gameId = Number(req.params.gameId);
     if (isNaN(gameId)) {
         res.status(400).send("Invalid game ID");
         return;
