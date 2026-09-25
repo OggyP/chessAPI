@@ -35,7 +35,7 @@ function joinQueue(ws: any, gameInfo: gameOptions) {
                     info: clientInfo,
                     ws: ws
                 }
-            })
+            }).catch((err) => console.error('Failed to create game', err))
         else
             createGame(gameInfo, {
                 black: {
@@ -46,7 +46,7 @@ function joinQueue(ws: any, gameInfo: gameOptions) {
                     info: clientInfo,
                     ws: ws
                 }
-            })
+            }).catch((err) => console.error('Failed to create game', err))
 
         queues.delete(queueName)
         broadcastQueues()

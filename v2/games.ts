@@ -2,6 +2,7 @@ import express from 'express'
 import { verifyToken } from './auth'
 import mysql from 'mysql'
 import { sqlQuery } from '../database'
+import { playerUsername, rowToChatMessage } from '../websocket/play'
 
 let router = express.Router()
 
@@ -11,6 +12,15 @@ async function getGameInfo(gameId: number) {
         return result.result[0]
     } else
         return false
+}
+
+async function getGameMessages(gameId: number, whiteName: string, blackName: string) {
+    const result = await sqlQuery(
+        "SELECT * FROM messages WHERE game_id = " + mysql.escape(gameId) + " ORDER BY id ASC"
+    )
+    if (result.error || !result.result)
+        return []
+    return result.result.map((row: any) => rowToChatMessage(row, playerUsername(whiteName), playerUsername(blackName)))
 }
 
 router.get('/latest', async (req, res) => {
@@ -67,7 +77,12 @@ router.get('/view/*', async (req, res) => {
             res.status(400).send("Invalid game ID")
             return
         }
-        res.send(gameInfo)
+        if (gameInfo.winner === 'ongoing') {
+            res.status(400).send("Game is still in progress")
+            return
+        }
+        const messages = await getGameMessages(gameId, gameInfo.white, gameInfo.black)
+        res.send({ ...gameInfo, messages })
     }
 })
 

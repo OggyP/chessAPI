@@ -7,6 +7,8 @@ exports.spectatorsInGame = exports.playersInGame = exports.games = exports.gameM
 exports.createGame = createGame;
 exports.checkRejoin = checkRejoin;
 exports.broadcastSpectateGames = broadcastSpectateGames;
+exports.rowToChatMessage = rowToChatMessage;
+exports.playerUsername = playerUsername;
 const chessLogic_1 = require("../chessLogic/chessLogic");
 const database_1 = require("../database");
 const clients_1 = require("./clients");
@@ -14,12 +16,43 @@ const mysql_1 = __importDefault(require("mysql"));
 const crypto_1 = require("crypto");
 const gameModes = ['standard', '960', 'fourkings'];
 exports.gameModes = gameModes;
+const CHAT_MAX_LENGTH = 250;
+const CHAT_RATE_LIMIT_MS = 500;
 const games = new Map();
 exports.games = games;
 const playersInGame = new Map();
 exports.playersInGame = playersInGame;
 const spectatorsInGame = new Map();
 exports.spectatorsInGame = spectatorsInGame;
+function formatPlayerName(info) {
+    return ((info.title) ? `${info.title}|` : '') + info.username;
+}
+function playerUsername(stored) {
+    const parts = stored.split('|');
+    return parts.length > 1 ? parts.slice(1).join('|') : parts[0];
+}
+function resolveChatRole(username, isSpectator, whiteName, blackName) {
+    if (isSpectator)
+        return 'spectator';
+    if (username === whiteName || username === playerUsername(whiteName))
+        return 'white';
+    if (username === blackName || username === playerUsername(blackName))
+        return 'black';
+    return 'spectator';
+}
+function rowToChatMessage(row, whiteName, blackName) {
+    const isSpectator = !!row.is_spectator;
+    const username = row.user || '';
+    return {
+        id: row.id,
+        text: row.message || '',
+        user: username,
+        isSpectator,
+        moveNum: row.move_num,
+        role: resolveChatRole(username, isSpectator, whiteName, blackName),
+        sentAt: row.created_at ? new Date(row.created_at).getTime() : Date.now()
+    };
+}
 function broadcastSpectateGames() {
     const dataToSend = Array.from(games, ([gameId, game]) => ({
         gameId: gameId,
@@ -38,13 +71,17 @@ class Game {
     gameInfo;
     timers;
     id;
+    sqlGameId;
     spectators;
-    constructor(gameId, gameInfo, players) {
+    chatRateLimit;
+    constructor(gameId, gameInfo, players, sqlGameId) {
         this.id = gameId;
+        this.sqlGameId = sqlGameId;
         this.players = players;
         this.gameInfo = gameInfo;
         this.gameType = (0, chessLogic_1.getChessGame)(gameInfo.mode);
         this.spectators = [];
+        this.chatRateLimit = new Map();
         this.timers = {
             white: { "time": gameInfo.time.base * 1000, "timeout": null, "startedWaiting": new Date().getTime() },
             black: { "time": gameInfo.time.base * 1000, "timeout": null, "startedWaiting": new Date().getTime() }
@@ -103,6 +140,10 @@ class Game {
                         });
                         this.onGameOver();
                     }
+                    break;
+                case 'chat':
+                    this.handleChat(this.players[team].info, team, data?.text);
+                    break;
             }
         }
         catch (e) {
@@ -111,6 +152,85 @@ class Game {
                 description: `${e}`
             });
         }
+    }
+    receivedSpectatorMessage(user, message) {
+        try {
+            const event = JSON.parse(message);
+            if (event.type === 'chat')
+                this.handleChat(user, 'spectator', event.data?.text);
+        }
+        catch (e) {
+            // Ignore malformed spectator messages
+        }
+    }
+    async handleChat(from, role, rawText) {
+        if (typeof rawText !== 'string')
+            return;
+        const text = rawText.trim().slice(0, CHAT_MAX_LENGTH);
+        if (!text)
+            return;
+        const now = Date.now();
+        const lastSent = this.chatRateLimit.get(from.userId);
+        if (lastSent && now - lastSent < CHAT_RATE_LIMIT_MS)
+            return;
+        this.chatRateLimit.set(from.userId, now);
+        const isSpectator = role === 'spectator';
+        const moveNum = this.game.getMoveCount();
+        const userName = from.username;
+        const insertSql = "INSERT INTO messages (game_id, user, is_spectator, message, move_num) VALUES ("
+            + mysql_1.default.escape(this.sqlGameId) + ", "
+            + mysql_1.default.escape(userName) + ", "
+            + mysql_1.default.escape(isSpectator ? 1 : 0) + ", "
+            + mysql_1.default.escape(text) + ", "
+            + mysql_1.default.escape(moveNum) + ")";
+        const response = await (0, database_1.sqlQuery)(insertSql);
+        if (response.error) {
+            console.error('Failed to save chat message', response.error);
+            return;
+        }
+        const chatMsg = {
+            id: response.result.insertId,
+            text,
+            user: userName,
+            isSpectator,
+            moveNum,
+            role,
+            sentAt: now
+        };
+        this.broadcastChat(chatMsg);
+    }
+    broadcastChat(chatMsg) {
+        // Players never see spectator messages
+        if (!chatMsg.isSpectator) {
+            for (let i = 0; i < 2; i++) {
+                const player = ['white', 'black'][i];
+                const ws = this.players[player].ws;
+                if (ws)
+                    (0, clients_1.sendToWs)(ws, 'chat', chatMsg);
+            }
+        }
+        for (let i = 0; i < this.spectators.length; i++) {
+            const ws = this.spectators[i].ws;
+            if (ws)
+                (0, clients_1.sendToWs)(ws, 'chat', chatMsg);
+        }
+    }
+    async sendChatHistory(ws, includeSpectators) {
+        if (!ws)
+            return;
+        let sql = "SELECT * FROM messages WHERE game_id = " + mysql_1.default.escape(this.sqlGameId);
+        if (!includeSpectators)
+            sql += " AND is_spectator = 0";
+        sql += " ORDER BY id ASC";
+        const response = await (0, database_1.sqlQuery)(sql);
+        if (response.error) {
+            console.error('Failed to load chat history', response.error);
+            return;
+        }
+        const whiteName = this.players.white.info.username;
+        const blackName = this.players.black.info.username;
+        const messages = (response.result || []).map((row) => rowToChatMessage(row, whiteName, blackName));
+        (0, clients_1.sendToWs)(ws, 'chatHistory', messages);
     }
     sendGameInfo(user) {
         const ws = this.players[user].ws;
@@ -172,7 +292,7 @@ class Game {
         if (this.timers.white.timeout)
             clearTimeout(this.timers.white.timeout);
         let ratings = {};
-        let SQLgameId = undefined;
+        let SQLgameId = this.sqlGameId;
         for (let i = 0; i < 2; i++) {
             const team = ['white', 'black'][i];
             const playerInfo = this.players[team].info;
@@ -180,26 +300,26 @@ class Game {
             ratings[team] = newRating(team, playerInfo.rating, oppPlayerInfo.rating, playerInfo.ratingDeviation, oppPlayerInfo.ratingDeviation, this.game.gameOver.winner);
         }
         if (this.game.getMoveCount() > 0) {
-            const sql = "INSERT INTO gamesV2 (gameMode, white, black, winner, gameOverReason, gameOverInfo, openingName, openingECO, pgn, timeOption, whiteRating, blackRating, whiteRatingChange, blackRatingChange) VALUES ("
-                + mysql_1.default.escape(this.gameInfo.mode) + ", "
-                + mysql_1.default.escape(((this.players.white.info.title) ? `${this.players.white.info.title}|` : '') + this.players.white.info.username) + ", "
-                + mysql_1.default.escape(((this.players.black.info.title) ? `${this.players.black.info.title}|` : '') + this.players.black.info.username) + ", "
-                + mysql_1.default.escape(this.game.gameOver.winner) + ", "
-                + mysql_1.default.escape(this.game.gameOver.by) + ", "
-                + mysql_1.default.escape(this.game.gameOver.extraInfo) + ", "
-                + mysql_1.default.escape(this.game.opening.Name) + ", "
-                + mysql_1.default.escape(this.game.opening.ECO) + ", "
-                + mysql_1.default.escape(this.game.getPGN()) + ", "
-                + mysql_1.default.escape(this.gameInfo.time.base + '+' + this.gameInfo.time.increment) + ", "
-                + mysql_1.default.escape(this.players.white.info.rating) + ", "
-                + mysql_1.default.escape(this.players.black.info.rating) + ", "
-                + mysql_1.default.escape(ratings.white.rating - this.players.white.info.rating) + ", "
-                + mysql_1.default.escape(ratings.black.rating - this.players.black.info.rating) + ")";
+            const sql = "UPDATE gamesV2 SET "
+                + "gameMode = " + mysql_1.default.escape(this.gameInfo.mode)
+                + ", white = " + mysql_1.default.escape(formatPlayerName(this.players.white.info))
+                + ", black = " + mysql_1.default.escape(formatPlayerName(this.players.black.info))
+                + ", winner = " + mysql_1.default.escape(this.game.gameOver.winner)
+                + ", gameOverReason = " + mysql_1.default.escape(this.game.gameOver.by)
+                + ", gameOverInfo = " + mysql_1.default.escape(this.game.gameOver.extraInfo)
+                + ", openingName = " + mysql_1.default.escape(this.game.opening.Name)
+                + ", openingECO = " + mysql_1.default.escape(this.game.opening.ECO)
+                + ", pgn = " + mysql_1.default.escape(this.game.getPGN())
+                + ", timeOption = " + mysql_1.default.escape(this.gameInfo.time.base + '+' + this.gameInfo.time.increment)
+                + ", whiteRating = " + mysql_1.default.escape(this.players.white.info.rating)
+                + ", blackRating = " + mysql_1.default.escape(this.players.black.info.rating)
+                + ", whiteRatingChange = " + mysql_1.default.escape(ratings.white.rating - this.players.white.info.rating)
+                + ", blackRatingChange = " + mysql_1.default.escape(ratings.black.rating - this.players.black.info.rating)
+                + " WHERE id = " + mysql_1.default.escape(this.sqlGameId);
             console.log(sql);
             const response = await (0, database_1.sqlQuery)(sql);
             if (response.error)
                 throw response.error;
-            SQLgameId = response.result.insertId;
             for (let i = 0; i < 2; i++) {
                 const team = ['white', 'black'][i];
                 const initialPlayerInfo = this.players[team].info;
@@ -226,6 +346,12 @@ class Game {
                         throw err;
                 });
             }
+        }
+        else {
+            // No moves played — drop provisional game row and any chat
+            await (0, database_1.sqlQuery)("DELETE FROM messages WHERE game_id = " + mysql_1.default.escape(this.sqlGameId));
+            await (0, database_1.sqlQuery)("DELETE FROM gamesV2 WHERE id = " + mysql_1.default.escape(this.sqlGameId));
+            SQLgameId = undefined;
         }
         for (let i = 0; i < 2; i++) {
             const player = ['white', 'black'][i];
@@ -298,6 +424,7 @@ class Game {
         ws.on('message', (data) => this.receivedMessage(team, data));
         this.sendGameInfo(team);
         (0, clients_1.sendToWs)(this.players[team].ws, "timerUpdate", this.getTimerInfo(this.game.getLatest().board.getTurn('next'), true));
+        this.sendChatHistory(ws, false);
     }
     sendSpectatorList() {
         const data = Array.from(this.spectators, (spectator => spectator.user));
@@ -320,6 +447,7 @@ class Game {
             user: player,
             ws: ws
         });
+        ws.on('message', (data) => this.receivedSpectatorMessage(player, data));
         (0, clients_1.sendToWs)(ws, 'game', {
             mode: this.gameInfo.mode,
             time: this.gameInfo.time,
@@ -329,6 +457,7 @@ class Game {
             black: this.players.black.info
         });
         (0, clients_1.sendToWs)(ws, "timerUpdate", this.getTimerInfo(this.game.getLatest().board.getTurn('next'), true));
+        this.sendChatHistory(ws, true);
         this.sendSpectatorList();
     }
     removeSpectator(userId) {
@@ -384,9 +513,28 @@ function oppositeTeam(team) {
     else
         return 'white';
 }
-function createGame(gameInfo, players) {
+async function createGame(gameInfo, players) {
+    const insertSql = "INSERT INTO gamesV2 (gameMode, white, black, winner, gameOverReason, gameOverInfo, openingName, openingECO, pgn, timeOption, whiteRating, blackRating, whiteRatingChange, blackRatingChange) VALUES ("
+        + mysql_1.default.escape(gameInfo.mode) + ", "
+        + mysql_1.default.escape(formatPlayerName(players.white.info)) + ", "
+        + mysql_1.default.escape(formatPlayerName(players.black.info)) + ", "
+        + mysql_1.default.escape('ongoing') + ", "
+        + mysql_1.default.escape('ongoing') + ", "
+        + mysql_1.default.escape(null) + ", "
+        + mysql_1.default.escape('?') + ", "
+        + mysql_1.default.escape('?') + ", "
+        + mysql_1.default.escape('*') + ", "
+        + mysql_1.default.escape(gameInfo.time.base + '+' + gameInfo.time.increment) + ", "
+        + mysql_1.default.escape(players.white.info.rating) + ", "
+        + mysql_1.default.escape(players.black.info.rating) + ", "
+        + mysql_1.default.escape(0) + ", "
+        + mysql_1.default.escape(0) + ")";
+    const response = await (0, database_1.sqlQuery)(insertSql);
+    if (response.error)
+        throw response.error;
+    const sqlGameId = response.result.insertId;
     const gameId = (0, crypto_1.randomUUID)();
-    const game = new Game(gameId, gameInfo, players);
+    const game = new Game(gameId, gameInfo, players, sqlGameId);
     games.set(gameId, game);
     playersInGame.set(players.white.info.userId, gameId);
     playersInGame.set(players.black.info.userId, gameId);

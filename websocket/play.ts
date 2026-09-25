@@ -58,9 +58,57 @@ interface moveDataSend extends moveDataReceive {
     }
 }
 
+type chatRole = 'white' | 'black' | 'spectator'
+
+interface chatMessage {
+    id: number
+    text: string
+    user: string
+    isSpectator: boolean
+    moveNum: number
+    role: chatRole
+    sentAt: number
+}
+
+const CHAT_MAX_LENGTH = 250
+const CHAT_RATE_LIMIT_MS = 500
+
 const games = new Map<string, Game>()
 const playersInGame = new Map<number, string>()
 const spectatorsInGame = new Map<number, string>()
+
+function formatPlayerName(info: user) {
+    return ((info.title) ? `${info.title}|` : '') + info.username
+}
+
+function playerUsername(stored: string) {
+    const parts = stored.split('|')
+    return parts.length > 1 ? parts.slice(1).join('|') : parts[0]
+}
+
+function resolveChatRole(username: string, isSpectator: boolean, whiteName: string, blackName: string): chatRole {
+    if (isSpectator)
+        return 'spectator'
+    if (username === whiteName || username === playerUsername(whiteName))
+        return 'white'
+    if (username === blackName || username === playerUsername(blackName))
+        return 'black'
+    return 'spectator'
+}
+
+function rowToChatMessage(row: any, whiteName: string, blackName: string): chatMessage {
+    const isSpectator = !!row.is_spectator
+    const username = row.user || ''
+    return {
+        id: row.id,
+        text: row.message || '',
+        user: username,
+        isSpectator,
+        moveNum: row.move_num,
+        role: resolveChatRole(username, isSpectator, whiteName, blackName),
+        sentAt: row.created_at ? new Date(row.created_at).getTime() : Date.now()
+    }
+}
 
 function broadcastSpectateGames() {
     const dataToSend = Array.from(games, ([gameId, game]) => (
@@ -84,18 +132,22 @@ class Game {
     gameInfo: gameOptions
     timers: timers
     id: string
+    sqlGameId: number
     spectators: {
         user: user
         ws: any
     }[]
+    chatRateLimit: Map<number, number>
 
-    constructor(gameId: string, gameInfo: gameOptions, players: players) {
+    constructor(gameId: string, gameInfo: gameOptions, players: players, sqlGameId: number) {
         this.id = gameId
+        this.sqlGameId = sqlGameId
         this.players = players
         this.gameInfo = gameInfo
         this.gameType = getChessGame(gameInfo.mode)
 
         this.spectators = []
+        this.chatRateLimit = new Map()
 
         this.timers = {
             white: { "time": gameInfo.time.base * 1000, "timeout": null, "startedWaiting": new Date().getTime() },
@@ -165,6 +217,10 @@ class Game {
                         })
                         this.onGameOver()
                     }
+                    break;
+                case 'chat':
+                    this.handleChat(this.players[team].info, team, data?.text)
+                    break;
             }
         } catch (e) {
             sendToWs(this.players[team].ws, 'error', {
@@ -172,6 +228,101 @@ class Game {
                 description: `${e}`
             })
         }
+    }
+
+    receivedSpectatorMessage(user: user, message: string) {
+        try {
+            const event = JSON.parse(message)
+            if (event.type === 'chat')
+                this.handleChat(user, 'spectator', event.data?.text)
+        } catch (e) {
+            // Ignore malformed spectator messages
+        }
+    }
+
+    async handleChat(from: user, role: chatRole, rawText: unknown) {
+        if (typeof rawText !== 'string')
+            return
+
+        const text = rawText.trim().slice(0, CHAT_MAX_LENGTH)
+        if (!text)
+            return
+
+        const now = Date.now()
+        const lastSent = this.chatRateLimit.get(from.userId)
+        if (lastSent && now - lastSent < CHAT_RATE_LIMIT_MS)
+            return
+        this.chatRateLimit.set(from.userId, now)
+
+        const isSpectator = role === 'spectator'
+        const moveNum = this.game.getMoveCount()
+        const userName = from.username
+
+        const insertSql = "INSERT INTO messages (game_id, user, is_spectator, message, move_num) VALUES ("
+            + mysql.escape(this.sqlGameId) + ", "
+            + mysql.escape(userName) + ", "
+            + mysql.escape(isSpectator ? 1 : 0) + ", "
+            + mysql.escape(text) + ", "
+            + mysql.escape(moveNum) + ")"
+
+        const response = await sqlQuery(insertSql)
+        if (response.error) {
+            console.error('Failed to save chat message', response.error)
+            return
+        }
+
+        const chatMsg: chatMessage = {
+            id: response.result.insertId,
+            text,
+            user: userName,
+            isSpectator,
+            moveNum,
+            role,
+            sentAt: now
+        }
+
+        this.broadcastChat(chatMsg)
+    }
+
+    broadcastChat(chatMsg: chatMessage) {
+        // Players never see spectator messages
+        if (!chatMsg.isSpectator) {
+            for (let i = 0; i < 2; i++) {
+                const player = ['white', 'black'][i]
+                const ws = this.players[player as teams].ws
+                if (ws)
+                    sendToWs(ws, 'chat', chatMsg)
+            }
+        }
+
+        for (let i = 0; i < this.spectators.length; i++) {
+            const ws = this.spectators[i].ws
+            if (ws)
+                sendToWs(ws, 'chat', chatMsg)
+        }
+    }
+
+    async sendChatHistory(ws: any, includeSpectators: boolean) {
+        if (!ws)
+            return
+
+        let sql = "SELECT * FROM messages WHERE game_id = " + mysql.escape(this.sqlGameId)
+        if (!includeSpectators)
+            sql += " AND is_spectator = 0"
+        sql += " ORDER BY id ASC"
+
+        const response = await sqlQuery(sql)
+        if (response.error) {
+            console.error('Failed to load chat history', response.error)
+            return
+        }
+
+        const whiteName = this.players.white.info.username
+        const blackName = this.players.black.info.username
+        const messages = (response.result || []).map((row: any) =>
+            rowToChatMessage(row, whiteName, blackName)
+        )
+        sendToWs(ws, 'chatHistory', messages)
     }
 
     sendGameInfo(user: teams) {
@@ -243,8 +394,7 @@ class Game {
         if (this.timers.white.timeout) clearTimeout(this.timers.white.timeout)
 
         let ratings: any = {}
-        let SQLgameId: number | undefined = undefined
-
+        let SQLgameId: number | undefined = this.sqlGameId
 
         for (let i = 0; i < 2; i++) {
             const team: teams = ['white', 'black'][i] as teams
@@ -255,25 +405,25 @@ class Game {
         }
 
         if (this.game.getMoveCount() > 0) {
-            const sql = "INSERT INTO gamesV2 (gameMode, white, black, winner, gameOverReason, gameOverInfo, openingName, openingECO, pgn, timeOption, whiteRating, blackRating, whiteRatingChange, blackRatingChange) VALUES ("
-                + mysql.escape(this.gameInfo.mode) + ", "
-                + mysql.escape(((this.players.white.info.title) ? `${this.players.white.info.title}|` : '') + this.players.white.info.username) + ", "
-                + mysql.escape(((this.players.black.info.title) ? `${this.players.black.info.title}|` : '') + this.players.black.info.username) + ", "
-                + mysql.escape(this.game.gameOver.winner) + ", "
-                + mysql.escape(this.game.gameOver.by) + ", "
-                + mysql.escape(this.game.gameOver.extraInfo) + ", "
-                + mysql.escape(this.game.opening.Name) + ", "
-                + mysql.escape(this.game.opening.ECO) + ", "
-                + mysql.escape(this.game.getPGN()) + ", "
-                + mysql.escape(this.gameInfo.time.base + '+' + this.gameInfo.time.increment) + ", "
-                + mysql.escape(this.players.white.info.rating) + ", "
-                + mysql.escape(this.players.black.info.rating) + ", "
-                + mysql.escape(ratings.white.rating - this.players.white.info.rating) + ", "
-                + mysql.escape(ratings.black.rating - this.players.black.info.rating) + ")";
+            const sql = "UPDATE gamesV2 SET "
+                + "gameMode = " + mysql.escape(this.gameInfo.mode)
+                + ", white = " + mysql.escape(formatPlayerName(this.players.white.info))
+                + ", black = " + mysql.escape(formatPlayerName(this.players.black.info))
+                + ", winner = " + mysql.escape(this.game.gameOver.winner)
+                + ", gameOverReason = " + mysql.escape(this.game.gameOver.by)
+                + ", gameOverInfo = " + mysql.escape(this.game.gameOver.extraInfo)
+                + ", openingName = " + mysql.escape(this.game.opening.Name)
+                + ", openingECO = " + mysql.escape(this.game.opening.ECO)
+                + ", pgn = " + mysql.escape(this.game.getPGN())
+                + ", timeOption = " + mysql.escape(this.gameInfo.time.base + '+' + this.gameInfo.time.increment)
+                + ", whiteRating = " + mysql.escape(this.players.white.info.rating)
+                + ", blackRating = " + mysql.escape(this.players.black.info.rating)
+                + ", whiteRatingChange = " + mysql.escape(ratings.white.rating - this.players.white.info.rating)
+                + ", blackRatingChange = " + mysql.escape(ratings.black.rating - this.players.black.info.rating)
+                + " WHERE id = " + mysql.escape(this.sqlGameId)
             console.log(sql)
             const response = await sqlQuery(sql)
             if (response.error) throw response.error
-            SQLgameId = response.result.insertId
 
             for (let i = 0; i < 2; i++) {
                 const team: teams = ['white', 'black'][i] as teams
@@ -305,6 +455,11 @@ class Game {
                     if (err) throw err;
                 });
             }
+        } else {
+            // No moves played — drop provisional game row and any chat
+            await sqlQuery("DELETE FROM messages WHERE game_id = " + mysql.escape(this.sqlGameId))
+            await sqlQuery("DELETE FROM gamesV2 WHERE id = " + mysql.escape(this.sqlGameId))
+            SQLgameId = undefined
         }
 
         for (let i = 0; i < 2; i++) {
@@ -389,6 +544,7 @@ class Game {
 
         this.sendGameInfo(team)
         sendToWs(this.players[team].ws, "timerUpdate", this.getTimerInfo(this.game.getLatest().board.getTurn('next'), true))
+        this.sendChatHistory(ws, false)
     }
 
     sendSpectatorList() {
@@ -416,6 +572,8 @@ class Game {
             ws: ws
         })
 
+        ws.on('message', (data: string) => this.receivedSpectatorMessage(player, data));
+
         sendToWs(ws, 'game', {
             mode: this.gameInfo.mode,
             time: this.gameInfo.time,
@@ -425,6 +583,7 @@ class Game {
             black: this.players.black.info
         })
         sendToWs(ws, "timerUpdate", this.getTimerInfo(this.game.getLatest().board.getTurn('next'), true))
+        this.sendChatHistory(ws, true)
 
         this.sendSpectatorList()
     }
@@ -489,9 +648,29 @@ function oppositeTeam(team: teams): teams {
         return 'white'
 }
 
-function createGame(gameInfo: gameOptions, players: players) {
+async function createGame(gameInfo: gameOptions, players: players) {
+    const insertSql = "INSERT INTO gamesV2 (gameMode, white, black, winner, gameOverReason, gameOverInfo, openingName, openingECO, pgn, timeOption, whiteRating, blackRating, whiteRatingChange, blackRatingChange) VALUES ("
+        + mysql.escape(gameInfo.mode) + ", "
+        + mysql.escape(formatPlayerName(players.white.info)) + ", "
+        + mysql.escape(formatPlayerName(players.black.info)) + ", "
+        + mysql.escape('ongoing') + ", "
+        + mysql.escape('ongoing') + ", "
+        + mysql.escape(null) + ", "
+        + mysql.escape('?') + ", "
+        + mysql.escape('?') + ", "
+        + mysql.escape('*') + ", "
+        + mysql.escape(gameInfo.time.base + '+' + gameInfo.time.increment) + ", "
+        + mysql.escape(players.white.info.rating) + ", "
+        + mysql.escape(players.black.info.rating) + ", "
+        + mysql.escape(0) + ", "
+        + mysql.escape(0) + ")"
+
+    const response = await sqlQuery(insertSql)
+    if (response.error) throw response.error
+    const sqlGameId: number = response.result.insertId
+
     const gameId = randomUUID()
-    const game = new Game(gameId, gameInfo, players)
+    const game = new Game(gameId, gameInfo, players, sqlGameId)
     games.set(gameId, game)
 
     playersInGame.set(players.white.info.userId, gameId)
@@ -500,5 +679,5 @@ function createGame(gameInfo: gameOptions, players: players) {
     broadcastSpectateGames()
 }
 
-export { gameModes, createGame, games, playersInGame, checkRejoin, broadcastSpectateGames, spectatorsInGame }
-export type { gameModesType, gameOptions }
+export { gameModes, createGame, games, playersInGame, checkRejoin, broadcastSpectateGames, spectatorsInGame, rowToChatMessage, playerUsername }
+export type { gameModesType, gameOptions, chatMessage }

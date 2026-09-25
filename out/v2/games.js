@@ -7,6 +7,7 @@ const express_1 = __importDefault(require("express"));
 const auth_1 = require("./auth");
 const mysql_1 = __importDefault(require("mysql"));
 const database_1 = require("../database");
+const play_1 = require("../websocket/play");
 let router = express_1.default.Router();
 async function getGameInfo(gameId) {
     const result = await (0, database_1.sqlQuery)("SELECT * FROM gamesV2 WHERE id = " + mysql_1.default.escape(gameId));
@@ -15,6 +16,12 @@ async function getGameInfo(gameId) {
     }
     else
         return false;
+}
+async function getGameMessages(gameId, whiteName, blackName) {
+    const result = await (0, database_1.sqlQuery)("SELECT * FROM messages WHERE game_id = " + mysql_1.default.escape(gameId) + " ORDER BY id ASC");
+    if (result.error || !result.result)
+        return [];
+    return result.result.map((row) => (0, play_1.rowToChatMessage)(row, (0, play_1.playerUsername)(whiteName), (0, play_1.playerUsername)(blackName)));
 }
 router.get('/latest', async (req, res) => {
     if (!(req.headers.token && req.headers['user-id'])) {
@@ -70,7 +77,12 @@ router.get('/view/*', async (req, res) => {
             res.status(400).send("Invalid game ID");
             return;
         }
-        res.send(gameInfo);
+        if (gameInfo.winner === 'ongoing') {
+            res.status(400).send("Game is still in progress");
+            return;
+        }
+        const messages = await getGameMessages(gameId, gameInfo.white, gameInfo.black);
+        res.send({ ...gameInfo, messages });
     }
 });
 exports.default = router;

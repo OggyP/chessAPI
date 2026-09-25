@@ -28,7 +28,7 @@ function joinQueue(ws, gameInfo) {
                     info: clientInfo,
                     ws: ws
                 }
-            });
+            }).catch((err) => console.error('Failed to create game', err));
         else
             (0, play_1.createGame)(gameInfo, {
                 black: {
@@ -39,7 +39,7 @@ function joinQueue(ws, gameInfo) {
                     info: clientInfo,
                     ws: ws
                 }
-            });
+            }).catch((err) => console.error('Failed to create game', err));
         queues.delete(queueName);
         broadcastQueues();
     }
