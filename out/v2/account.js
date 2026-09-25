@@ -38,7 +38,7 @@ router.get('/status', async (req, res) => {
                 const game = play_1.games.get(gameId);
                 if (game) {
                     res.send({
-                        redirect: `/play/${game.gameInfo.mode}/${game.gameInfo.time.base}+${game.gameInfo.time.increment}`
+                        redirect: `/play/${game.gameInfo.mode}/${game.gameInfo.time.base}%2B${game.gameInfo.time.increment}`
                     });
                     return;
                 }

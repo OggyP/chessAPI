@@ -77,7 +77,7 @@ router.get('/view/:gameId', async (req, res) => {
             res.status(400).send("Invalid game ID")
             return
         }
-        if (gameInfo.winner === 'ongoing') {
+        if (gameInfo.gameOverReason === 'ongoing') {
             res.status(400).send("Game is still in progress")
             return
         }

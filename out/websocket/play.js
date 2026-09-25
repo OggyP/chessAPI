@@ -501,7 +501,7 @@ function checkRejoin(userId, location, ws) {
         case '/home':
             const info = game.gameInfo;
             (0, clients_1.sendToWs)(ws, 'redirect', {
-                location: `/play/${info.mode}/${info.time.base}+${info.time.increment}`
+                location: `/play/${info.mode}/${info.time.base}%2B${info.time.increment}`
             });
             return true;
     }
@@ -518,7 +518,7 @@ async function createGame(gameInfo, players) {
         + mysql_1.default.escape(gameInfo.mode) + ", "
         + mysql_1.default.escape(formatPlayerName(players.white.info)) + ", "
         + mysql_1.default.escape(formatPlayerName(players.black.info)) + ", "
-        + mysql_1.default.escape('ongoing') + ", "
+        + mysql_1.default.escape('*') + ", "
         + mysql_1.default.escape('ongoing') + ", "
         + mysql_1.default.escape(null) + ", "
         + mysql_1.default.escape('?') + ", "
@@ -530,8 +530,18 @@ async function createGame(gameInfo, players) {
         + mysql_1.default.escape(0) + ", "
         + mysql_1.default.escape(0) + ")";
     const response = await (0, database_1.sqlQuery)(insertSql);
-    if (response.error)
+    if (response.error) {
+        console.error('Failed to create game', response.error);
+        (0, clients_1.sendToWs)(players.white.ws, 'error', {
+            title: 'Failed to Start Game',
+            description: 'Could not create the game. Please try queueing again.'
+        });
+        (0, clients_1.sendToWs)(players.black.ws, 'error', {
+            title: 'Failed to Start Game',
+            description: 'Could not create the game. Please try queueing again.'
+        });
         throw response.error;
+    }
     const sqlGameId = response.result.insertId;
     const gameId = (0, crypto_1.randomUUID)();
     const game = new Game(gameId, gameInfo, players, sqlGameId);

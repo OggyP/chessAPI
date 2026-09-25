@@ -634,7 +634,7 @@ function checkRejoin(userId: number, location: string, ws: any): boolean {
         case '/home':
             const info = game.gameInfo
             sendToWs(ws, 'redirect', {
-                location: `/play/${info.mode}/${info.time.base}+${info.time.increment}`
+                location: `/play/${info.mode}/${info.time.base}%2B${info.time.increment}`
             })
             return true
     }
@@ -653,7 +653,7 @@ async function createGame(gameInfo: gameOptions, players: players) {
         + mysql.escape(gameInfo.mode) + ", "
         + mysql.escape(formatPlayerName(players.white.info)) + ", "
         + mysql.escape(formatPlayerName(players.black.info)) + ", "
-        + mysql.escape('ongoing') + ", "
+        + mysql.escape('*') + ", "
         + mysql.escape('ongoing') + ", "
         + mysql.escape(null) + ", "
         + mysql.escape('?') + ", "
@@ -666,7 +666,18 @@ async function createGame(gameInfo: gameOptions, players: players) {
         + mysql.escape(0) + ")"
 
     const response = await sqlQuery(insertSql)
-    if (response.error) throw response.error
+    if (response.error) {
+        console.error('Failed to create game', response.error)
+        sendToWs(players.white.ws, 'error', {
+            title: 'Failed to Start Game',
+            description: 'Could not create the game. Please try queueing again.'
+        })
+        sendToWs(players.black.ws, 'error', {
+            title: 'Failed to Start Game',
+            description: 'Could not create the game. Please try queueing again.'
+        })
+        throw response.error
+    }
     const sqlGameId: number = response.result.insertId
 
     const gameId = randomUUID()
